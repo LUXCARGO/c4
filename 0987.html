@@ -1,326 +1,201 @@
-<!doctype html>
-
-<html lang="ru">
+<!DOCTYPE html><html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Air Draw — рисование в воздухе жестами</title>
-  <!-- MediaPipe Hands from jsDelivr -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Draw</title>
   <style>
-    :root{
-      --bg:#0f1724;
-      --card:#0b1220;
-      --accent:#06b6d4;
-      --muted:#94a3b8;
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+      background: #222;
+      color: #fff;
     }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,#071025 0%, #091827 100%);color:#e6eef6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-    .app{width:100%;max-width:1100px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(2,6,23,0.7);display:grid;grid-template-columns:1fr 360px;gap:18px;padding:18px}
-    @media(max-width:980px){.app{grid-template-columns:1fr;}}
-    .stage{position:relative;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
-    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-    canvas#overlay{position:absolute;inset:0;pointer-events:none}
-    canvas#draw{position:absolute;inset:0}
-    .panel{padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:10px}
-    h1{margin:0 0 8px 0;font-size:18px}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-    .btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:inherit;cursor:pointer}
-    .btn.primary{background:var(--accent);color:#04212a;border:0}
-    .color-palette{display:flex;gap:8px;align-items:center}
-    .swatch{width:30px;height:30px;border-radius:6px;border:2px solid rgba(255,255,255,0.06);cursor:pointer}
-    .thickness{display:flex;gap:6px;align-items:center}
-    input[type=range]{width:120px}
-    .info{font-size:13px;color:var(--muted);line-height:1.4}
-    .instructions{margin-top:12px;background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;font-size:13px;color:var(--muted)}
-    .footer{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .small{font-size:12px;color:var(--muted)}
-    .status{font-size:13px;color:#9ae6b4}
+    #container {
+      position: relative;
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: black;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #controls {
+      width: 280px;
+      background: #333;
+      padding: 15px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+    button, input[type=color], input[type=range] {
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      background: #555;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #777;
+    }
+    h3 {
+      margin: 10px 0 5px;
+    }
   </style>
 </head>
 <body>
-  <div class="app" role="application">
-    <div class="stage" id="stage">
-      <video id="video" autoplay playsinline></video>
-      <canvas id="overlay"></canvas>
-      <canvas id="draw"></canvas>
-      <!-- small status box -->
-      <div style="position:absolute;left:10px;top:10px;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px;font-size:13px"> <span id="fps">FPS: --</span> • <span id="gesture">Жест: —</span> </div>
-    </div><div class="panel">
-  <h1>Air Draw — рисование в воздухе</h1>
-  <div class="controls">
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label class="small">Цвет</label>
-      <div class="color-palette" id="colors">
-        <div class="swatch" data-color="#06b6d4" style="background:#06b6d4"></div>
-        <div class="swatch" data-color="#ef4444" style="background:#ef4444"></div>
-        <div class="swatch" data-color="#f59e0b" style="background:#f59e0b"></div>
-        <div class="swatch" data-color="#10b981" style="background:#10b981"></div>
-        <div class="swatch" data-color="#ffffff" style="background:#ffffff"></div>
-      </div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label class="small">Толщина</label>
-      <div class="thickness">
-        <input id="thickness" type="range" min="2" max="40" value="6">
-        <div id="thicknessVal" class="small">6 px</div>
-      </div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label class="small">Действия</label>
-      <div style="display:flex;gap:6px">
-        <button class="btn" id="clearBtn">Очистить</button>
-        <button class="btn primary" id="saveBtn">Сохранить PNG</button>
-      </div>
-    </div>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="output"></canvas>
+    <canvas id="draw"></canvas>
   </div>
+  <div id="controls">
+    <button id="startBtn">Запустить камеру</button><h3>Цвет линии</h3>
+<input type="color" id="colorPicker" value="#ff0000">
 
-  <div class="footer">
-    <div class="small">Камера: <span id="camStatus">Не подключена</span></div>
-    <div class="small">Режим: <strong id="mode">Рисование по пину</strong></div>
-    <div class="status" id="perfNote"></div>
-  </div>
+<h3>Толщина линии</h3>
+<input type="range" id="thickness" min="1" max="20" value="5">
 
-  <div class="instructions">
-    <strong>Как пользоваться</strong>
-    <ol>
-      <li>Разрешите доступ к камере при запросе браузера.</li>
-      <li>Поднесите руку к камере, ладонью к камере. Приложение зеркалирует изображение, поэтому двигайтесь естественно.</li>
-      <li>Для начала рисования сомкните большой и указательный пальцы (пинч). Отсоединение пальцев — остановит рисование.</li>
-      <li>Смена цвета и толщины происходит через панель слева. Кнопка "Очистить" сбрасывает холст, "Сохранить PNG" — загружает изображение.</li>
-      <li>Рисовать лучше на нейтральном фоне и при достаточном освещении. Держите руку в поле камеры.</li>
-    </ol>
+<h3>Чувствительность пинча</h3>
+<input type="range" id="pinchSlider" min="0.01" max="0.1" step="0.005" value="0.035">
 
-    <strong>Поддерживаемые жесты</strong>
-    <ul>
-      <li><strong>Пинч (большой+указательный)</strong> — включение/выключение рисования</li>
-      <li><strong>Движение указательного пальца</strong> — рисует линию при активном пинче</li>
-    </ul>
-  </div>
+<button id="clearBtn">Очистить</button>
+<button id="saveBtn">Сохранить</button>
 
-  <div style="margin-top:10px;font-size:12px;color:var(--muted)">
-    Поддержка: Chrome, Firefox, Safari (версии с WebRTC и WebGL). Если камера не запускается — проверьте права и попробуйте HTTPS.
-  </div>
-</div>
+<h3>Инструкции</h3>
+<p>Сомкните большой и указательный пальцы, чтобы рисовать. Разомкните — чтобы остановить.</p>
 
-  </div><script>
-// --- Основные элементы ---
-const video = document.getElementById('video');
-const overlay = document.getElementById('overlay');
-const drawCanvas = document.getElementById('draw');
-const overlayCtx = overlay.getContext('2d');
-const drawCtx = drawCanvas.getContext('2d');
-const camStatus = document.getElementById('camStatus');
-const fpsEl = document.getElementById('fps');
-const gestureEl = document.getElementById('gesture');
-const perfNote = document.getElementById('perfNote');
+  </div>  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>  <script>
+    const videoElement = document.getElementById('video');
+    const outputCanvas = document.getElementById('output');
+    const drawCanvas = document.getElementById('draw');
+    const ctx = outputCanvas.getContext('2d');
+    const drawCtx = drawCanvas.getContext('2d');
 
-let currentColor = '#06b6d4';
-let thickness = 6;
-let drawing = false;
-let lastPos = null;
-let lastTime = performance.now();
-let frames = 0;
-let lastFpsTime = performance.now();
+    const startBtn = document.getElementById('startBtn');
+    const colorPicker = document.getElementById('colorPicker');
+    const thickness = document.getElementById('thickness');
+    const pinchSlider = document.getElementById('pinchSlider');
+    const clearBtn = document.getElementById('clearBtn');
+    const saveBtn = document.getElementById('saveBtn');
 
-// Подгоняем размер canvas под контейнер
-function resizeCanvases(){
-  const rect = video.getBoundingClientRect();
-  overlay.width = rect.width;
-  overlay.height = rect.height;
-  drawCanvas.width = rect.width;
-  drawCanvas.height = rect.height;
-}
+    let drawing = false;
+    let lastX, lastY;
+    let currentColor = colorPicker.value;
+    let currentThickness = thickness.value;
+    let pinchThreshold = parseFloat(pinchSlider.value);
 
-window.addEventListener('resize', resizeCanvases);
+    colorPicker.addEventListener('input', e => currentColor = e.target.value);
+    thickness.addEventListener('input', e => currentThickness = e.target.value);
+    pinchSlider.addEventListener('input', e => pinchThreshold = parseFloat(e.target.value));
 
-// UI: цвет
-for(const sw of document.querySelectorAll('.swatch')){
-  sw.addEventListener('click', ()=>{
-    currentColor = sw.dataset.color;
-    // отметка активного
-    document.querySelectorAll('.swatch').forEach(s=>s.style.outline='');
-    sw.style.outline = '3px solid rgba(255,255,255,0.14)';
-  });
-}
-// выберем первый
-document.querySelectorAll('.swatch')[0].style.outline = '3px solid rgba(255,255,255,0.14)';
-
-// толщина
-const thicknessInput = document.getElementById('thickness');
-const thicknessVal = document.getElementById('thicknessVal');
-thicknessInput.addEventListener('input', ()=>{thickness = +thicknessInput.value; thicknessVal.textContent = thickness + ' px'});
-
-// Очистить
-document.getElementById('clearBtn').addEventListener('click', ()=>{ drawCtx.clearRect(0,0,drawCanvas.width, drawCanvas.height); });
-
-// Сохранить
-document.getElementById('saveBtn').addEventListener('click', ()=>{
-  // объединяем холст рисования и наложение (если нужно)
-  const tmp = document.createElement('canvas');
-  tmp.width = drawCanvas.width; tmp.height = drawCanvas.height;
-  const tctx = tmp.getContext('2d');
-  // optional: фон прозрачный. Если нужен белый фон, раскомментировать следующую строку
-  // tctx.fillStyle = '#ffffff'; tctx.fillRect(0,0,tmp.width,tmp.height);
-  tctx.drawImage(drawCanvas,0,0);
-  const link = document.createElement('a');
-  link.download = 'air-draw.png';
-  link.href = tmp.toDataURL('image/png');
-  link.click();
-});
-
-// --- MediaPipe Hands setup ---
-const hands = new Hands({locateFile: (file) => {
-  return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-}});
-
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.6
-});
-
-hands.onResults(onResults);
-
-// Камера wrapper от MediaPipe
-let camera;
-async function startCamera(){
-  try{
-    camera = new Camera(video, {
-      onFrame: async () => {
-        await hands.send({image: video});
-      },
-      width: 1280,
-      height: 720
+    clearBtn.addEventListener('click', () => {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
     });
-    camera.start();
-    camStatus.textContent = 'Включена';
-    resizeCanvases();
-  }catch(err){
-    camStatus.textContent = 'Ошибка: ' + err.message;
-    console.error(err);
-  }
-}
 
-// Помогает преобразовать координаты из видео в canvas
-function landmarkToPoint(lm, videoRect){
-  // MediaPipe возвращает x,y нормализованные относительно видео (0..1)
-  const x = lm.x * videoRect.width;
-  const y = lm.y * videoRect.height;
-  return {x,y};
-}
+    saveBtn.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = 'drawing.png';
+      link.href = drawCanvas.toDataURL();
+      link.click();
+    });
 
-// простая функция расстояния
-function dist(a,b){
-  const dx = a.x-b.x; const dy = a.y-b.y; return Math.sqrt(dx*dx+dy*dy);
-}
-
-let lastGesture = '';
-let pinchActive = false;
-let pinchStartTime = 0;
-
-// Обработчик результатов распознавания
-function onResults(results){
-  frames++;
-  const now = performance.now();
-  if(now - lastFpsTime > 500){
-    const fps = Math.round((frames*1000)/(now-lastFpsTime));
-    fpsEl.textContent = 'FPS: ' + fps;
-    frames = 0; lastFpsTime = now;
-  }
-
-  // подготовка
-  overlayCtx.clearRect(0,0,overlay.width, overlay.height);
-  overlayCtx.save();
-
-  if(!results.multiHandLandmarks || results.multiHandLandmarks.length===0){
-    gestureEl.textContent = 'Нет руки';
-    lastPos = null; pinchActive = false;
-    overlayCtx.restore();
-    return;
-  }
-
-  const videoRect = video.getBoundingClientRect();
-
-  const landmarks = results.multiHandLandmarks[0];
-
-  // точки большого (4) и указательного (8) пальцев
-  const thumb = landmarkToPoint(landmarks[4], videoRect);
-  const index = landmarkToPoint(landmarks[8], videoRect);
-
-  // нарисуем контрольные точки
-  overlayCtx.fillStyle = 'rgba(0,0,0,0)';
-  // draw skeleton small
-  overlayCtx.strokeStyle = 'rgba(255,255,255,0.25)';
-  overlayCtx.lineWidth = 2;
-  for(let i=0;i<landmarks.length;i++){
-    const p = landmarkToPoint(landmarks[i], videoRect);
-    overlayCtx.beginPath(); overlayCtx.arc(p.x, p.y, 4,0,Math.PI*2); overlayCtx.fill();
-  }
-
-  // detect pinch by relative distance (normalized by video width)
-  const d = dist(thumb,index);
-  const rel = d / videoRect.width; // normalized
-  const PINCH_THRESHOLD = 0.035; // подберите в зависимости от камеры/размеров
-
-  if(rel < PINCH_THRESHOLD){
-    // жест — пинч
-    gestureEl.textContent = 'Пинч — рисуем';
-    overlayCtx.fillStyle = 'rgba(255,255,255,0.9)';
-    overlayCtx.beginPath(); overlayCtx.arc(index.x, index.y, 8,0,Math.PI*2); overlayCtx.fill();
-
-    // устойчивость — включаем пинч только если держат > 40 мс
-    if(!pinchActive){
-      if(pinchStartTime===0) pinchStartTime = now;
-      else if(now - pinchStartTime > 40) pinchActive = true; // активируем
+    function resizeCanvas() {
+      outputCanvas.width = videoElement.videoWidth;
+      outputCanvas.height = videoElement.videoHeight;
+      drawCanvas.width = videoElement.videoWidth;
+      drawCanvas.height = videoElement.videoHeight;
     }
-  } else {
-    // не пинч
-    gestureEl.textContent = 'Открытая рука';
-    pinchActive = false; pinchStartTime = 0;
-  }
 
-  // РИСОВАНИЕ: если пинч активен — берем позицию указательного пальца
-  if(pinchActive){
-    const pos = {x: index.x, y: index.y};
-    // рисуем линию на drawCanvas
-    drawCtx.lineJoin = 'round';
-    drawCtx.lineCap = 'round';
-    drawCtx.strokeStyle = currentColor;
-    drawCtx.lineWidth = thickness;
-
-    if(!lastPos){
-      lastPos = pos;
-      drawCtx.beginPath();
-      drawCtx.moveTo(pos.x, pos.y);
-      drawCtx.lineTo(pos.x+0.1, pos.y+0.1);
-      drawCtx.stroke();
-    } else {
-      // интерполяция для гладкости
-      drawCtx.beginPath();
-      drawCtx.moveTo(lastPos.x, lastPos.y);
-      drawCtx.lineTo(pos.x, pos.y);
-      drawCtx.stroke();
+    function distance(a, b) {
+      return Math.sqrt(
+        (a.x - b.x) ** 2 +
+        (a.y - b.y) ** 2 +
+        (a.z - b.z) ** 2
+      );
     }
-    lastPos = pos;
-  } else {
-    lastPos = null;
-  }
 
-  overlayCtx.restore();
-}
+    function onResults(results) {
+      ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 
-// Запуск камеры
-startCamera();
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        for (const landmarks of results.multiHandLandmarks) {
+          // Нарисовать скелет руки
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#0f0', lineWidth: 2});
+          drawLandmarks(ctx, landmarks, {color: '#f00', lineWidth: 1});
 
-// Замечания по производительности
-perfNote.textContent = 'Оптимизация: модель MediaPipe Hands, уменьшите разрешение камеры в настройках браузера если будут задержки.';
+          const indexTip = landmarks[8];
+          const thumbTip = landmarks[4];
 
-// Ограничение: Safari на iOS может блокировать автозапуск камеры без пользовательского взаимодействия.
+          // Инвертируем X (для зеркала)
+          const x = (1 - indexTip.x) * outputCanvas.width;
+          const y = indexTip.y * outputCanvas.height;
 
-</script></body>
+          if (distance(indexTip, thumbTip) < pinchThreshold) {
+            if (!drawing) {
+              drawing = true;
+              lastX = x;
+              lastY = y;
+            } else {
+              drawCtx.strokeStyle = currentColor;
+              drawCtx.lineWidth = currentThickness;
+              drawCtx.lineCap = 'round';
+              drawCtx.beginPath();
+              drawCtx.moveTo(lastX, lastY);
+              drawCtx.lineTo(x, y);
+              drawCtx.stroke();
+              lastX = x;
+              lastY = y;
+            }
+          } else {
+            drawing = false;
+          }
+        }
+      }
+    }
+
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(onResults);
+
+    let camera;
+    startBtn.addEventListener('click', async () => {
+      if (!camera) {
+        camera = new Camera(videoElement, {
+          onFrame: async () => {
+            await hands.send({image: videoElement});
+          },
+          width: 640,
+          height: 480
+        });
+      }
+      await camera.start();
+      resizeCanvas();
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+  </script></body>
 </html>
